@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
 
 const port = process.env.PORT || 5000;
@@ -67,6 +67,20 @@ async function run() {
             }
         });
 
+        // API to retrieve camp details by ID
+        app.get('/camps/:id', async (req, res) => {
+            const id = req.params.id;
+
+            try {
+                // const camp = await campCollection.findOne({ _id: new ObjectId(id) });
+                const camp = await campCollection.findOne({ _id: new ObjectId(id) });
+                res.send(camp);
+            } catch (error) {
+                console.error("Error fetching camp details:", error);
+                res.status(500).send({ message: "Failed to fetch camp details", error });
+            }
+        });
+
         // API to retrieve top 3 popular camps based on participantCount
         app.get('/popular-camps', async (req, res) => {
             try {
@@ -78,6 +92,17 @@ async function run() {
                 res.send(popularCamps);
             } catch (error) {
                 res.status(500).send({ message: "Failed to retrieve popular camps", error });
+            }
+        });
+
+        // API to register user for a camp
+        app.post('/register-camp', async (req, res) => {
+            const registrationData = req.body;
+            try {
+                const result = await registrationCollection.insertOne(registrationData);
+                res.send({ success: true, result });
+            } catch (error) {
+                res.status(500).send({ message: "Failed to register user", error });
             }
         });
     } finally {
