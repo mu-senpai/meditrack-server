@@ -57,12 +57,29 @@ async function run() {
         const campCollection = client.db("meditrackDB").collection("camps");
         const registrationCollection = client.db("meditrackDB").collection("registrations");
 
-        // Placeholder: APIs will be implemented here later
-        // Example structure for creating APIs:
-        // app.get('/api-endpoint', async (req, res) => {
-        //     const result = await someCollection.find().toArray();
-        //     res.send(result);
-        // });
+        // API to retrieve all camps
+        app.get('/camps', async (req, res) => {
+            try {
+                const camps = await campCollection.find().toArray();
+                res.send(camps);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to retrieve camps", error });
+            }
+        });
+
+        // API to retrieve top 3 popular camps based on participantCount
+        app.get('/popular-camps', async (req, res) => {
+            try {
+                const popularCamps = await campCollection
+                    .find()
+                    .sort({ participantCount: -1 })
+                    .limit(4)
+                    .toArray();
+                res.send(popularCamps);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to retrieve popular camps", error });
+            }
+        });
     } finally {
         // Ensure the client is closed properly when the server stops
         // await client.close();
