@@ -13,7 +13,7 @@ app.use(
     cors({
         origin: [
             "http://localhost:5173",
-            // "https://your-frontend-url.web.app",
+            "https://medi-track-ede0d.web.app",
             // "https://your-frontend-url.firebaseapp.com",
         ],
         credentials: true,
@@ -38,6 +38,7 @@ async function run() {
         const userCollection = client.db("meditrackDB").collection("users");
         const campCollection = client.db("meditrackDB").collection("camps");
         const registrationCollection = client.db("meditrackDB").collection("registrations");
+        const feedbackCollection = client.db("meditrackDB").collection("feedbacks");
 
         // JWT Verification Middleware
         const verifyToken = (req, res, next) => {
@@ -93,13 +94,11 @@ async function run() {
                     }
                     : {};
 
-                // Sorting logic
                 const sortOptions = {};
                 if (sortBy) {
                     sortOptions[sortBy] = order === "asc" ? 1 : -1;
                 }
 
-                // Fetch filtered & sorted data with pagination
                 const camps = await campCollection
                     .find(filter)
                     .sort(sortOptions)
@@ -107,7 +106,6 @@ async function run() {
                     .limit(limitNumber)
                     .toArray();
 
-                // Get total count for pagination metadata
                 const totalCamps = await campCollection.countDocuments(filter);
 
                 res.send({
@@ -121,8 +119,53 @@ async function run() {
             }
         });
 
+        app.get('/camps/:email', verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const { email } = req.params;
+                const { search = "", page = 1, limit = 10 } = req.query; // Default values
+
+                if (!email) {
+                    return res.status(400).send({ message: "Email parameter is missing." });
+                }
+
+                const query = {
+                    organizerEmail: email,
+                    $or: [
+                        { campName: { $regex: search, $options: "i" } },
+                        { location: { $regex: search, $options: "i" } },
+                        { healthcareProfessional: { $regex: search, $options: "i" } },
+                    ]
+                };
+
+                const totalCamps = await campCollection.countDocuments(query);
+                const camps = await campCollection
+                    .find(query)
+                    .skip((page - 1) * parseInt(limit))
+                    .limit(parseInt(limit))
+                    .toArray();
+
+                res.status(200).send({ camps, totalPages: Math.ceil(totalCamps / limit) });
+            } catch (error) {
+                console.error("Error fetching camps:", error);
+                res.status(500).send({ message: "An error occurred while fetching camps." });
+            }
+        });
+
+
         // API to retrieve camp details by ID
         app.get('/camps/:id', verifyToken, async (req, res) => {
+            const id = req.params.id;
+
+            try {
+                const camp = await campCollection.findOne({ _id: new ObjectId(id) });
+                res.send(camp);
+            } catch (error) {
+                console.error("Error fetching camp details:", error);
+                res.status(500).send({ message: "Failed to fetch camp details", error });
+            }
+        });
+
+        app.get('/camp-details/:id', async (req, res) => {
             const id = req.params.id;
 
             try {
@@ -261,6 +304,74 @@ async function run() {
             }
         });
 
+        app.get('/client/payment-history/:email', verifyToken, async (req, res) => {
+            const email = req.params.email;
+            const { search = "", date = "", page = 1, limit = 10 } = req.query;
+        
+            if (email !== req.decoded.email) {
+                return res.status(403).send({ message: 'Forbidden access' });
+            }
+        
+            try {
+                const query = {
+                    participantEmail: email,
+                    $or: [
+                        { campName: { $regex: search, $options: "i" } },
+                        { paymentId: search },
+                    ]
+                };
+        
+                if (date) {
+                    const startOfDay = new Date(date);
+                    startOfDay.setHours(0, 0, 0, 0); 
+        
+                    const endOfDay = new Date(date);
+                    endOfDay.setHours(23, 59, 59, 999); 
+        
+                    query.paymentTime = {
+                        $gte: startOfDay.toISOString(),
+                        $lte: endOfDay.toISOString(),
+                    };
+                }
+        
+                const totalCamps = await registrationCollection.countDocuments(query);
+                const camps = await registrationCollection.find(query)
+                    .skip((page - 1) * parseInt(limit))
+                    .limit(parseInt(limit))
+                    .toArray();
+        
+                res.send({ camps, totalPages: Math.ceil(totalCamps / limit) });
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch registered camps", error });
+            }
+        });        
+
+        app.get('/client/manage-registered-camps/:email', verifyToken, async (req, res) => {
+            const { email } = req.params;
+            const { search = "", page = 1, limit = 10 } = req.query;
+
+            if (email !== req.decoded.email) {
+                return res.status(403).send({ message: 'Forbidden access' });
+            }
+
+            const query = {
+                participantEmail: email,
+                $or: [
+                    { campName: { $regex: search, $options: "i" } },
+                    { location: { $regex: search, $options: "i" } }
+                ]
+            };
+
+            const totalCamps = await registrationCollection.countDocuments(query);
+            const camps = await registrationCollection.find(query)
+                .skip((page - 1) * limit)
+                .limit(parseInt(limit))
+                .toArray();
+
+            res.send({ camps, totalPages: Math.ceil(totalCamps / limit) });
+        });
+
+
         app.post("/create-payment-intent", async (req, res) => {
             try {
                 const { price } = req.body;
@@ -291,7 +402,6 @@ async function run() {
                 const { id } = req.params;
                 const { paymentId } = req.body;
 
-                // 🔹 Check if ID is valid before converting to ObjectId
                 if (!id || !ObjectId.isValid(id)) {
                     return res.status(400).send({ message: "Invalid payment ID format." });
                 }
@@ -303,7 +413,7 @@ async function run() {
                 const paymentTime = new Date().toISOString();
 
                 const result = await registrationCollection.updateOne(
-                    { _id: new ObjectId(id) }, // ✅ Now safely converts to ObjectId
+                    { _id: new ObjectId(id) },
                     {
                         $set: {
                             paymentStatus: "Paid",
@@ -325,8 +435,29 @@ async function run() {
             }
         });
 
+        app.get('/feedback', async (req, res) => {
+            try {
+                const feedbacks = await feedbackCollection
+                    .find()
+                    .toArray();
+                res.send(feedbacks);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to retrieve popular camps", error });
+            }
+        });
 
         // API to update feedback
+        app.post('/feedback', verifyToken, async (req, res) => {
+            const camp = req.body;
+            try {
+                const result = await feedbackCollection.insertOne(camp);
+                res.send({ success: true, result });
+            } catch (error) {
+                res.status(500).send({ message: "Failed to add feedback", error });
+            }
+        });
+
+
         app.patch('/update-feedback/:id', verifyToken, async (req, res) => {
             const { id } = req.params;
             const { feedback } = req.body;
@@ -346,6 +477,32 @@ async function run() {
             try {
                 const result = await registrationCollection.find().toArray();
                 res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch registrations", error });
+            }
+        });
+
+        app.get('/admin/manage-registrations', verifyToken, verifyAdmin, async (req, res) => {
+            try {
+                const { search = "", page = 1, limit = 10 } = req.query;
+
+                const query = search
+                    ? {
+                        $or: [
+                            { campName: { $regex: search, $options: "i" } },
+                            { participantName: { $regex: search, $options: "i" } },
+                            { participantEmail: { $regex: search, $options: "i" } }
+                        ]
+                    }
+                    : {};
+
+                const totalRegistrations = await registrationCollection.countDocuments(query);
+                const registrations = await registrationCollection.find(query)
+                    .skip((page - 1) * limit)
+                    .limit(parseInt(limit))
+                    .toArray();
+
+                res.send({ registrations, totalPages: Math.ceil(totalRegistrations / limit) });
             } catch (error) {
                 res.status(500).send({ message: "Failed to fetch registrations", error });
             }
@@ -442,25 +599,6 @@ async function run() {
                 return res.send({ message: 'user already exists', insertedId: null })
             }
             const result = await userCollection.insertOne(user);
-            res.send(result);
-        });
-
-        app.put('/users', async (req, res) => {
-            const user = req.body;
-            const filter = { email: user.email };
-            const options = { upsert: true };
-            const updateDoc = {
-                $set: {
-                    name: user.name,
-                    email: user.email,
-                    photoURL: user.photoURL,
-                    createdAt: user.createdAt,
-                    uid: user.uid,
-                    phone: user.phone,
-                    role: "user",
-                },
-            };
-            const result = await userCollection.updateOne(filter, updateDoc, options);
             res.send(result);
         });
 
