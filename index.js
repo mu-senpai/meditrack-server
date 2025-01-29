@@ -8,13 +8,12 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 5000;
 const app = express();
 
-// Middleware
 app.use(
     cors({
         origin: [
             "http://localhost:5173",
             "https://medi-track-ede0d.web.app",
-            // "https://your-frontend-url.firebaseapp.com",
+            "https://medi-track-ede0d.firebaseapp.com",
         ],
         credentials: true,
     })
@@ -79,12 +78,10 @@ async function run() {
             try {
                 const { search, sortBy, order, page, limit } = req.query;
 
-                // Convert page & limit to numbers, default to page 1 & 10 camps per page
                 const pageNumber = parseInt(page) || 1;
                 const limitNumber = parseInt(limit) || 10;
                 const skip = (pageNumber - 1) * limitNumber;
 
-                // Create a filter for search (match camp name or healthcare professional)
                 const filter = search
                     ? {
                         $or: [
